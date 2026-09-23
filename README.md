@@ -67,6 +67,13 @@ scripted model.
 
 ## What the code looks like
 
+The library is on npm:
+
+```bash
+npm install restate-pi @restatedev/restate-sdk @restatedev/restate-sdk-gen \
+  @earendil-works/pi-agent-core @earendil-works/pi-ai typebox
+```
+
 A pi session as a Restate virtual object is one call:
 
 ```ts
@@ -378,3 +385,7 @@ everything.
 | `pnpm test` | Run the unit tests, then the end-to-end tests. |
 | `pnpm test:unit` | Run the library's unit tests. |
 | `pnpm test:e2e` | Run the end-to-end tests in both modes (needs Docker). |
+
+## License
+
+MIT

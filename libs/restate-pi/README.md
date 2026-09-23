@@ -12,6 +12,16 @@ The library has two layers. Most code only needs the high-level one:
   from. Use them when you host a different pi layer (the `AgentHarness`, the coding
   agent) or need control the high-level API doesn't give.
 
+## Install
+
+```bash
+npm install restate-pi @restatedev/restate-sdk @restatedev/restate-sdk-gen \
+  @earendil-works/pi-agent-core @earendil-works/pi-ai typebox
+```
+
+Everything except `restate-pi` is a peer dependency, so your app controls those
+versions. restate-pi needs Node.js 22.19 or newer.
+
 ## A pi session as a virtual object
 
 ```ts
@@ -112,5 +122,5 @@ process can still poll it.
 | `currentTurn`, `steerHandler`, `loadHistory`, `appendHistory` | The session helpers `agentObject` is built from, for hand-written objects around another pi layer. |
 | `lastAssistantText`, `contentText` | Read text out of pi messages. |
 
-Peer dependencies: `@restatedev/restate-sdk`, `@restatedev/restate-sdk-gen`,
-`@earendil-works/pi-agent-core`, `@earendil-works/pi-ai`, `typebox`.
+The examples, end-to-end tests and design notes live in the
+[repository](https://github.com/igalshilman/restate-pi). MIT licensed.

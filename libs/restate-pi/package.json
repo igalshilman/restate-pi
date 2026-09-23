@@ -1,8 +1,32 @@
 {
   "name": "restate-pi",
   "version": "0.1.0",
-  "description": "Embed pi, the open-source coding agent, in Restate durable execution: a mailbox bridge between pi's async loop and the generator SDK, tools as Restate Operations",
+  "description": "Run pi, the open-source coding agent, inside Restate durable execution: agent sessions as virtual objects, tools as Restate operations, durable model calls and steering",
+  "keywords": [
+    "restate",
+    "durable-execution",
+    "pi",
+    "pi-agent",
+    "ai-agents",
+    "coding-agent",
+    "llm",
+    "agent",
+    "workflow",
+    "human-in-the-loop"
+  ],
+  "license": "MIT",
+  "author": "Igal Shilman",
+  "homepage": "https://github.com/igalshilman/restate-pi/tree/main/libs/restate-pi#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/igalshilman/restate-pi.git",
+    "directory": "libs/restate-pi"
+  },
+  "bugs": {
+    "url": "https://github.com/igalshilman/restate-pi/issues"
+  },
   "type": "module",
+  "sideEffects": false,
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -12,12 +36,21 @@
   },
   "files": [
     "dist",
-    "src"
+    "src",
+    "README.md",
+    "LICENSE"
   ],
+  "engines": {
+    "node": ">=22.19"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc -b && tsc -p test",
-    "test": "tsx --test test/*.test.ts"
+    "test": "tsx --test test/*.test.ts",
+    "prepack": "tsc -b --force"
   },
   "peerDependencies": {
     "@earendil-works/pi-agent-core": "^0.85.1",
