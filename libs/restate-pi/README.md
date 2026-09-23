@@ -1,52 +1,116 @@
 # restate-pi
 
-Embed [pi](https://github.com/badlogic/pi-mono) in Restate durable execution on the
-generator SDK. pi's loop stays untouched; its model calls and tool calls become
-journaled steps served by a fiber.
+Run [pi](https://github.com/badlogic/pi-mono)'s agent loop inside Restate durable
+execution, on the generator SDK. pi's loop stays untouched. Its model calls and tool
+calls become journaled Restate steps.
+
+The library has two layers. Most code only needs the high-level one:
+
+- **High level.** `agentObject` gives you a ready-made virtual object for a pi
+  session. `runAgent` runs one pi turn inside any handler.
+- **Building blocks.** The mailbox, `servePi` and the adapters those two are built
+  from. Use them when you host a different pi layer (the `AgentHarness`, the coding
+  agent) or need control the high-level API doesn't give.
+
+## A pi session as a virtual object
 
 ```ts
-import * as restate from "@restatedev/restate-sdk-gen";
-import {Agent} from "@earendil-works/pi-agent-core";
-import {Mailbox, durableStreamFn, runPi, servePi, serveRequest, toAgentTool, lastAssistantText} from "restate-pi";
+import {agentObject, scriptedModel, tool, textResult} from "restate-pi";
 
-function* prompt({message}: {message: string}): restate.Operation<string> {
-  const mailbox = new Mailbox();
-  const agent = new Agent({
-    initialState: {systemPrompt, model, tools: TOOLS.map((t) => toAgentTool(mailbox, t))},
-    streamFn: durableStreamFn(mailbox),
-  });
+export const releaseBot = agentObject({
+  name: "releaseBot",
+  systemPrompt: "You ship releases.",
+  model: () => ({models, model}),      // called for every turn
+  tools: [deploy, test],               // generator tools, see below
+});
+```
 
-  runPi(mailbox, async () => {                       // pi's side: plain async
-    await agent.prompt(message);
-    return lastAssistantText(agent.state.messages);
-  });
+The object key is the session. The object has three handlers:
 
-  return yield* servePi<string>(mailbox, {            // the fiber: serves what pi asks for
-    serve: (request) => serveRequest(request, {mailbox, models, tools: TOOLS}),
-    onSteer: (note) => agent.steer({role: "user", content: note, timestamp: Date.now()}),
+| Handler | What it does |
+| --- | --- |
+| `prompt({message})` | Runs one durable turn and returns pi's answer. The conversation is kept in object state, one entry per turn, so the next prompt continues it. |
+| `steer({note})` | Shared. Hands the note to the running turn and waits for the turn to confirm it. A note that arrives after pi finished starts a follow-up turn. A note that no turn takes starts the next `prompt`. |
+| `transcript()` | Shared. Returns the conversation. |
+
+To add your own handlers, pass `handlers` and `handlerOptions`. They share the
+object's state, which is how the approval example adds `pending`, `approve` and
+`reject`.
+
+`model` is a factory rather than a value because a model setup belongs to a single
+invocation, so the object builds a new one for every turn. Other options:
+- `defaultMessage` is used when `prompt` is called without a message;
+- `onEvent` receives pi's lifecycle events;
+- `onTurnEnd` runs at the end of each turn;
+- `retry` sets the retry policy for model calls;
+- `log` receives diagnostics from the loop.
+
+## One pi turn in any handler
+
+```ts
+import {runAgent} from "restate-pi";
+
+function* brief({goal}: {goal: string}): restate.Operation<string> {
+  const {text} = yield* runAgent({
+    systemPrompt: "You write short briefs.",
+    model: {models, model},
+    tools: [askResearcher],
+    message: goal,
+    history,                          // optional: earlier messages to continue from
   });
+  return text;
 }
 ```
 
-## API
+`runAgent` returns the answer (`text`) and the messages the run added (`added`), so
+you can store the conversation wherever you like. It works in services, objects and
+workflows. It also listens for steers sent to the invocation with `steerTurn`.
 
-| | |
+## Tools
+
+A tool is a generator function returning a Restate `Operation`. Its body can `run` a
+side effect, `sleep`, `call` another service, `select` over futures, or wait on an
+`awakeable`.
+
+```ts
+export const deploy = tool({
+  name: "deploy",
+  label: "Deploy build",
+  description: "Deploy the current build to an environment.",
+  parameters: Type.Object({env: Type.String()}),
+  *execute({env}, call) {
+    return textResult(yield* restate.run(() => deployTo(env), {name: `Deploy to ${env}`}));
+  },
+});
+```
+
+Pi's own tools become generator tools through `fromAgentTool`. Each call is one
+journaled step, and a thrown error (a non-zero exit, a missing file) is recorded and
+handed to pi as an error result instead of being retried.
+
+## For tests and demos
+
+`scriptedModel(script)` is pi-ai's fake provider, answered by `script(context)`
+instead of a queue. The same transcript always gets the same reply, so runs are
+deterministic, replay cleanly, and need no API key. It also supports deferred
+responses: the reply travels inside the journaled handle, so a replay in another
+process can still poll it.
+
+## Building blocks
+
+| Export | What it does |
 | --- | --- |
-| `Mailbox` | the seam. pi posts request descriptors and awaits answers; the fiber takes them with `next()` inside `run`, answers with `answer(seq, value)`. `complete`/`crash` end a turn. A request pi issues differently than the journal recorded fails the invocation. |
-| `tool(definition)`, `GenTool` | a pi tool whose `execute(params, call)` is a generator returning a Restate `Operation`. `textResult(text)` builds a plain result. |
-| `toAgentTool`, `toHarnessTool` | adapt one `GenTool` to pi's classic `Agent` or to its durable `AgentHarness` (`replay: "safe"`). |
-| `fromAgentTool(tool)` | one of pi's own tools (the coding agent's read/bash/edit/write) as a `GenTool`: one journaled step per call, and a thrown error (a non-zero exit, a missing file) is journaled and reported to pi as an error result instead of being retried. |
-| `durableStreamFn(mailbox)` | a `streamFn` for `Agent`: each model call is a request to the fiber, answered with a settled message replayed as a two-event stream. |
-| `durableModels(mailbox, real)` | a `Models` (or `ModelRuntime`) whose `streamSimple` and `streamDeferred` defer to the fiber; everything else is the real object. |
-| `askModel(mailbox, real, seq, options?)` | fiber side: the real provider call inside one journaled `run`, with a retry policy and an optional live-event hook. |
-| `servePi(mailbox, options)` | the fiber loop: one `select` over pi's next request, the `steer` signal and every task in flight. Delivers steers only while pi is blocked on a request; with `onLateSteer`, notes that arrive after pi finished start a follow-up turn. While pi is parked on answers it stops waiting on pi (`idleAfterMs`, default 50 ms), so long waits suspend. Throws a `TerminalError` if pi reported a failure. |
-| `steerTurn(invocationId, note)` | the sender's side of steering: signal the turn with an acknowledgement awakeable and wait. `true` once the note is in pi; `false` if the turn dropped it or ended without taking it, so the caller can start a new turn with it. |
-| `serveRequest(request, options)` | default serving: `askModel` for model calls, the matching `GenTool` for tool calls, a journaled delay plus `sleep` for harness waits. |
-| `runPi(mailbox, work)` | pi side: run the turn's async work and report its outcome to the fiber. |
-| `driveToSettlement({lane, request, mailbox})` | host pi's `AgentHarness`: `accept`, then loop on `drive`, turning each reported wait into a fiber request (a Restate timer). |
-| `captureSession`, `restoreSession`, `messagesOf` | move a harness session's conversation tree in and out of the process through the public `Session` API, so it can live in object state. |
-| `lastAssistantText(messages)`, `contentText(content)` | the last assistant text in a pi transcript; the text of one message's content. |
-| `scriptedModel(script)` | pi-ai's faux provider answered by `script(context)`: a deterministic, replay-safe model for demos and tests. |
+| `Mailbox` | The seam between pi and Restate. pi posts request descriptors and awaits answers. The handler takes them with `next()` inside `run` and answers with `answer(seq, value)`; `complete` and `crash` end a turn. If pi, on replay, asks for something other than what the journal recorded, the invocation fails. |
+| `servePi(mailbox, options)` | The handler's loop: a single `select` over pi's next request, the `steer` signal and every task in flight. A steer is delivered only while pi waits on a request, and `onLateSteer` turns late notes into a follow-up turn. Once pi is only waiting on answers and has gone quiet (`idleAfterMs`, default 50 ms), the loop stops listening to pi so long waits can suspend. Throws a `TerminalError` if pi reports a failure. |
+| `serveRequest(request, options)` | The default way to serve a request: the model call, the matching tool, or a durable wait for the harness. |
+| `runPi(mailbox, work)` | pi's side: runs the turn's async work and reports its outcome. Turns on one mailbox run one after another, so a follow-up turn never starts inside a turn that pi is still re-running on replay. |
+| `steerTurn(invocationId, note)` | Sends a steer and waits for the turn to acknowledge it. Returns `true` once the note is in pi, and `false` if the turn dropped it or ended without taking it, so the caller can start a new turn. |
+| `toAgentTool`, `toHarnessTool` | Adapt a generator tool to pi's classic `Agent` or to its `AgentHarness`. |
+| `durableStreamFn(mailbox)`, `durableModels(mailbox, real)` | Route pi's model calls through the mailbox. `durableStreamFn` is a `streamFn` for `Agent`; `durableModels` wraps a `Models` or `ModelRuntime`. |
+| `askModel(mailbox, real, seq, options?)` | The real provider call, as one journaled step with a retry policy. |
+| `driveToSettlement`, `captureSession`, `restoreSession`, `messagesOf` | Host pi's `AgentHarness`: accept an operation, drive it with Restate timers for every wait, and move the session tree in and out of object state. |
+| `currentTurn`, `steerHandler`, `loadHistory`, `appendHistory` | The session helpers `agentObject` is built from, for hand-written objects around another pi layer. |
+| `lastAssistantText`, `contentText` | Read text out of pi messages. |
 
 Peer dependencies: `@restatedev/restate-sdk`, `@restatedev/restate-sdk-gen`,
 `@earendil-works/pi-agent-core`, `@earendil-works/pi-ai`, `typebox`.

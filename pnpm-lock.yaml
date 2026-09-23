@@ -176,6 +176,21 @@ importers:
         specifier: ^7.0.2
         version: 7.0.2
 
+  e2e:
+    devDependencies:
+      '@restatedev/restate-sdk':
+        specifier: ^1.17.2
+        version: 1.17.2
+      '@restatedev/restate-sdk-gen':
+        specifier: ^1.17.2
+        version: 1.17.2(@restatedev/restate-sdk@1.17.2)
+      '@restatedev/restate-sdk-testcontainers':
+        specifier: ^1.17.2
+        version: 1.17.2(supports-color@7.2.0)
+      restate-pi:
+        specifier: workspace:*
+        version: link:../libs/restate-pi
+
   examples/approval:
     dependencies:
       '@earendil-works/pi-agent-core':
@@ -196,13 +211,6 @@ importers:
       typebox:
         specifier: ^1.3.33
         version: 1.3.33
-    devDependencies:
-      '@restatedev/restate-sdk-testcontainers':
-        specifier: ^1.17.2
-        version: 1.17.2(supports-color@7.2.0)
-      testcontainers:
-        specifier: ^11.14.0
-        version: 11.14.0(supports-color@7.2.0)
 
   examples/delegation:
     dependencies:
@@ -224,13 +232,6 @@ importers:
       typebox:
         specifier: ^1.3.33
         version: 1.3.33
-    devDependencies:
-      '@restatedev/restate-sdk-testcontainers':
-        specifier: ^1.17.2
-        version: 1.17.2(supports-color@7.2.0)
-      testcontainers:
-        specifier: ^11.14.0
-        version: 11.14.0(supports-color@7.2.0)
 
   examples/virtual-object:
     dependencies:
@@ -258,13 +259,6 @@ importers:
       zod:
         specifier: ^4.6.5
         version: 4.6.5
-    devDependencies:
-      '@restatedev/restate-sdk-testcontainers':
-        specifier: ^1.17.2
-        version: 1.17.2(supports-color@7.2.0)
-      testcontainers:
-        specifier: ^11.14.0
-        version: 11.14.0(supports-color@7.2.0)
 
   libs/restate-pi:
     devDependencies:

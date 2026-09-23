@@ -9,49 +9,11 @@
 //   curl localhost:8080/lead/brief --json '{"goal": "Should we run pi on Restate?"}'
 
 import * as restate from "@restatedev/restate-sdk-gen";
-import {Agent} from "@earendil-works/pi-agent-core";
 import {fauxAssistantMessage, fauxText, fauxToolCall, type Context as AiContext} from "@earendil-works/pi-ai";
 import {Type} from "typebox";
-import {
-  Mailbox,
-  contentText,
-  durableStreamFn,
-  lastAssistantText,
-  runPi,
-  scriptedModel,
-  servePi,
-  serveRequest,
-  textResult,
-  toAgentTool,
-  tool,
-  type GenTool,
-} from "restate-pi";
+import {contentText, runAgent, scriptedModel, textResult, tool} from "restate-pi";
 
 const log = (scope: string, message: string) => console.log(`${new Date().toISOString().slice(11, 23)} [${scope}] ${message}`);
-
-/** One pi turn in this invocation: `message` in, the last assistant text out. */
-function* runAgent(opts: {
-  name: string;
-  systemPrompt: string;
-  message: string;
-  tools: readonly GenTool[];
-  script: (context: AiContext) => ReturnType<typeof fauxAssistantMessage>;
-}): restate.Operation<string> {
-  const mailbox = new Mailbox();
-  const {models, model} = scriptedModel(opts.script);
-  const agent = new Agent({
-    initialState: {systemPrompt: opts.systemPrompt, model, tools: opts.tools.map((t) => toAgentTool(mailbox, t))},
-    streamFn: durableStreamFn(mailbox),
-  });
-  runPi(mailbox, async () => {
-    await agent.prompt(opts.message);
-    return lastAssistantText(agent.state.messages);
-  });
-  return yield* servePi<string>(mailbox, {
-    serve: (request) => serveRequest(request, {mailbox, models, tools: opts.tools}),
-    log: (line) => log(opts.name, line),
-  });
-}
 
 // ---- researcher ----------------------------------------------------------------
 
@@ -85,13 +47,14 @@ function researcherScript(context: AiContext) {
 }
 
 function* research({topic, question}: {topic: string; question: string}): restate.Operation<string> {
-  return yield* runAgent({
-    name: `researcher:${topic}`,
+  const {text} = yield* runAgent({
     systemPrompt: "You research one topic and answer in one sentence.",
-    message: `Topic: ${topic}. ${question}`,
+    model: scriptedModel(researcherScript),
     tools: [lookup],
-    script: researcherScript,
+    message: `Topic: ${topic}. ${question}`,
+    log: (line) => log(`researcher:${topic}`, line),
   });
+  return text;
 }
 
 export const researcher = restate.service({
@@ -129,13 +92,14 @@ function leadScript(context: AiContext) {
 }
 
 function* brief({goal}: {goal: string}): restate.Operation<string> {
-  return yield* runAgent({
-    name: "lead",
+  const {text} = yield* runAgent({
     systemPrompt: "You plan a short brief and delegate research to researcher agents, in parallel where you can.",
-    message: goal,
+    model: scriptedModel(leadScript),
     tools: [askResearcher],
-    script: leadScript,
+    message: goal,
+    log: (line) => log("lead", line),
   });
+  return text;
 }
 
 export const lead = restate.service({

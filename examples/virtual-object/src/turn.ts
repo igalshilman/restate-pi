@@ -1,47 +1,8 @@
-// Shared by the three objects.
-//
-// Steering: the running turn records its invocation id in state; the shared
-// `steer` handler reads it and hands the note to that turn with `steerTurn`,
-// so a note is addressed by session key, not invocation id. If no turn is
-// running, or the turn ends without taking the note, the note becomes the next
-// turn: the handler sends a `prompt` to its own object.
+// Shared by the three objects: request schemas with demo defaults, the default
+// release prompt, the finish-delay knob and one-line logging of pi's events.
 
-import * as restate from "@restatedev/restate-sdk-gen";
-import {TerminalError} from "@restatedev/restate-sdk";
-import {steerTurn} from "restate-pi";
 import {z} from "zod";
 import {log} from "./log.js";
-
-type TurnState = {invocation: string};
-
-/** Run `body` as the object's current turn, so `steer` can find it. The marker
- * is cleared however the turn ends; a retryable error keeps it, since the
- * invocation is still alive and will run again. */
-export function* currentTurn<T>(body: restate.Operation<T>): restate.Operation<T> {
-  const state = restate.state<TurnState>();
-  state.set("invocation", restate.handlerRequest().id);
-  try {
-    const result = yield* body;
-    state.clear("invocation");
-    return result;
-  } catch (error) {
-    if (error instanceof TerminalError) state.clear("invocation");
-    throw error;
-  }
-}
-
-/** The shared `steer` handler for the object called `objectName`, which must have a `prompt({message})` handler. */
-export function steerHandler(objectName: string) {
-  // Declared as an interface, not a reference to the implementation: the object refers to this handler.
-  const target = restate.iface.object(objectName, {prompt: restate.iface.json<{message: string}, string>()});
-  return function* steer({note}: {note: string}): restate.Operation<string> {
-    const invocation = yield* restate.sharedState<TurnState>().get("invocation");
-    if (invocation && (yield* steerTurn(invocation, note))) return `steer delivered to ${invocation}`;
-    const key = restate.handlerRequest().key ?? "default";
-    const started = yield* restate.sendClient(target, key).prompt({message: note});
-    return `no turn took the note; it starts a new turn ${started.id}`;
-  };
-}
 
 export const steerSchema = {
   input: z.object({note: z.string().default("Please also run the linter.")}),

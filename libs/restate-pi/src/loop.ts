@@ -196,10 +196,20 @@ export function* steerTurn(invocationId: string, note: string, steerSignal = "st
   return won.tag === "ack" ? yield* ack : false;
 }
 
-/** pi side: run pi's work for this turn and report its outcome to the fiber. */
+/** The turn pi is working on, per mailbox; the next one starts after it. */
+const running = new WeakMap<Mailbox, Promise<void>>();
+
+/**
+ * pi side: run pi's work for this turn and report its outcome to the fiber.
+ * Turns on one mailbox run one after another. That matters on replay: the fiber
+ * sees a turn's `done` in the journal, and may start a follow-up turn, before
+ * pi's re-run of that turn has actually finished.
+ */
 export function runPi<R>(mailbox: Mailbox, work: () => Promise<R>): void {
-  work().then(
+  const previous = running.get(mailbox) ?? Promise.resolve();
+  const turn = previous.then(work).then(
     (result) => mailbox.complete(result),
     (error: unknown) => mailbox.crash(error),
   );
+  running.set(mailbox, turn);
 }

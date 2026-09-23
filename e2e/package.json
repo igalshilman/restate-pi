@@ -1,0 +1,17 @@
+{
+  "name": "@restate-pi/e2e",
+  "version": "0.1.0",
+  "private": true,
+  "description": "End-to-end tests: every example against a real Restate server in Docker, live and always replaying",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p .",
+    "test": "tsx --conditions=restate-pi-source --test --test-concurrency=1 *.test.ts"
+  },
+  "devDependencies": {
+    "@restatedev/restate-sdk": "^1.17.2",
+    "@restatedev/restate-sdk-gen": "^1.17.2",
+    "@restatedev/restate-sdk-testcontainers": "^1.17.2",
+    "restate-pi": "workspace:*"
+  }
+}

@@ -18,6 +18,7 @@ Everything is written against Restate's generator SDK,
 | [`examples/virtual-object`](examples/virtual-object) | pi as a Restate virtual object, at three layers: `piAgent`, `piHarness`, `piCoding`. |
 | [`examples/approval`](examples/approval) | A deploy tool that waits, suspended, for a human to approve production. |
 | [`examples/delegation`](examples/delegation) | A lead agent that hands research to other agents over Restate, in parallel. |
+| [`e2e`](e2e) | End-to-end tests for every example, run live and always replaying. |
 
 ## Quick start
 
@@ -66,27 +67,27 @@ scripted model.
 
 ## What the code looks like
 
-A Restate handler builds a pi `Agent` as usual, but hands it a mailbox instead of a
-real model and real tools. pi's side runs as plain async code, while the handler serves
-whatever pi asks for:
+A pi session as a Restate virtual object is one call:
 
 ```ts
-function* prompt({message}: {message: string}): restate.Operation<string> {
-  const mailbox = new Mailbox();
-  const agent = new Agent({
-    initialState: {systemPrompt, model, tools: TOOLS.map((t) => toAgentTool(mailbox, t))},
-    streamFn: durableStreamFn(mailbox),
-  });
+import {agentObject} from "restate-pi";
 
-  runPi(mailbox, async () => {                  // pi's side: plain async
-    await agent.prompt(message);
-    return lastAssistantText(agent.state.messages);
-  });
+export const releaseBot = agentObject({
+  name: "releaseBot",
+  systemPrompt: "You ship releases.",
+  model: () => ({models, model}),
+  tools: [deploy, test],
+});
+```
 
-  return yield* servePi<string>(mailbox, {       // Restate's side: serve each request as a journaled step
-    serve: (request) => serveRequest(request, {mailbox, models, tools: TOOLS}),
-    onSteer: (note) => agent.steer({role: "user", content: note, timestamp: Date.now()}),
-  });
+That gives you `prompt`, `steer` and `transcript` handlers, with the conversation kept
+in object state. To run a single pi turn inside any other handler (a service, a
+workflow, a tool), use `runAgent`:
+
+```ts
+function* brief({goal}: {goal: string}): restate.Operation<string> {
+  const {text} = yield* runAgent({systemPrompt, model: {models, model}, tools: [askResearcher], message: goal});
+  return text;
 }
 ```
 
@@ -108,7 +109,9 @@ export const deploy = tool({
 ```
 
 One tool definition works with pi's classic `Agent`, its durable `AgentHarness`, and
-the coding agent. The [library README](libs/restate-pi) lists the full API.
+the coding agent. Underneath `agentObject` and `runAgent` sit the building blocks
+described next: a mailbox, the `servePi` loop and the adapters. They stay available for
+hosting other pi layers. The [library README](libs/restate-pi) lists the full API.
 
 ## How it works
 
@@ -147,9 +150,9 @@ on from it.
 
 | Object | pi layer | What Restate adds |
 | --- | --- | --- |
-| `piAgent` | `Agent` from `pi-agent-core` | Every model call and tool call is a journaled step. |
-| `piHarness` | `AgentHarness`, pi's own durable runtime | Restate acts as the serving layer the harness spec describes: it calls `accept`, loops on `drive`, and turns every wait the harness asks for (retry backoff, deferred responses) into a Restate timer. |
-| `piCoding` | `createAgentSession` from `pi-coding-agent` | pi's real `read`, `bash`, `edit` and `write` tools run as journaled steps in a per-session workspace. A failing command comes back to pi as an error result instead of being retried. |
+| `piAgent` | `Agent` from `pi-agent-core`, through `agentObject` | Every model call and tool call is a journaled step. The whole object is a single `agentObject(...)` call. |
+| `piHarness` | `AgentHarness`, pi's own durable runtime, hand-written on the building blocks | Restate acts as the serving layer the harness spec describes: it calls `accept`, loops on `drive`, and turns every wait the harness asks for (retry backoff, deferred responses) into a Restate timer. |
+| `piCoding` | `createAgentSession` from `pi-coding-agent`, hand-written on the building blocks | pi's real `read`, `bash`, `edit` and `write` tools run as journaled steps in a per-session workspace. A failing command comes back to pi as an error result instead of being retried. |
 
 `steer` hands a note to the running turn and waits until the turn confirms it took it.
 No note is lost. A note that arrives after pi has finished starts a follow-up turn in
@@ -180,7 +183,8 @@ ran it.
 
 ### Approval
 
-`releaseAgent` ships a release to staging and then production. For production, its
+`releaseAgent` is an `agentObject` with three extra handlers: `pending`, `approve` and
+`reject`. It ships a release to staging and then production. For production, its
 `deploy` tool creates an awakeable, records it in object state, and waits for
 `approve`, `reject`, or a deadline. Nothing runs while it waits: the invocation is
 suspended until someone decides.
@@ -197,7 +201,7 @@ curl localhost:8080/restate/invocation/$ID/attach
 ### Delegation
 
 `lead` and `researcher` are Restate services, and each call to either one runs one pi
-agent. The lead's `ask_researcher` tool is a Restate call to `researcher`. pi runs the
+agent with `runAgent`. The lead's `ask_researcher` tool is a Restate call to `researcher`. pi runs the
 model's tool calls in parallel, so a single reply from the lead starts two researcher
 agents at once, each one durable.
 
@@ -224,20 +228,34 @@ Every example listens on port 9080, so run one at a time or set `PORT`.
 
 ## Tests
 
-`pnpm test` runs the library's unit tests, which cover the mailbox's rules for
-ordering, replay, divergence and going idle. It then runs each example's integration
-tests against a real Restate server in Docker, started with
-`@restatedev/restate-sdk-testcontainers`.
+`pnpm test:unit` runs the library's unit tests, which cover the mailbox's rules for
+ordering, replay, divergence and going idle. They need nothing but Node.
 
-The virtual-object tests cover:
-- turns;
+`pnpm test:e2e` runs the end-to-end tests in [`e2e/`](e2e). They start every example
+against a real Restate server in Docker, using `@restatedev/restate-sdk-testcontainers`,
+and run each suite twice:
+
+- **live:** the server keeps an invocation running while it makes progress, as in
+  production;
+- **always replaying:** the server suspends the invocation at every await and replays
+  its whole journal to continue. Any non-determinism between an execution and its
+  replay fails the test, for example pi asking for a different tool call or a step
+  taken in a different order.
+
+Retries are disabled in both modes, so a failure shows up at once instead of being
+retried in the background.
+
+The suites cover:
+- turns and conversation history;
 - steering: mid-turn, twice in one turn, late, idle, and after a stale turn;
-- the deferred-response path;
-- failing commands.
+- the harness's deferred-response path;
+- failing commands in the coding agent;
+- approvals: approved, rejected, expired, and the invocation suspended while it waits;
+- parallel delegation to sub-agents;
+- that no tool effect runs twice.
 
-They also run all three objects on a server that suspends and replays after every
-journal entry. The approval tests check that a turn waiting for a decision is actually
-suspended. Set `RESTATE_IMAGE` to test against a different server image.
+Set `E2E_MODES=live` or `E2E_MODES=replay` to run one mode, and `pnpm test` to run
+everything.
 
 ## Scripts
 
@@ -247,4 +265,6 @@ suspended. Set `RESTATE_IMAGE` to test against a different server image.
 | `pnpm start` | Build, then serve the virtual-object example. |
 | `pnpm build` | Build the library and the examples (`tsc -b`). |
 | `pnpm typecheck` | Build, then type-check the tests. |
-| `pnpm test` | Run the unit tests, then the Docker integration tests. |
+| `pnpm test` | Run the unit tests, then the end-to-end tests. |
+| `pnpm test:unit` | Run the library's unit tests. |
+| `pnpm test:e2e` | Run the end-to-end tests in both modes (needs Docker). |

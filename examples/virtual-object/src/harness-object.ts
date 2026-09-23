@@ -28,23 +28,26 @@ import {
 } from "@earendil-works/pi-agent-core";
 import {
   Mailbox,
+  appendHistory,
   captureSession,
+  currentTurn,
   driveToSettlement,
   durableModels,
   lastAssistantText,
   messagesOf,
   restoreSession,
   runPi,
+  loadHistory,
   servePi,
   serveRequest,
+  steerHandler,
   toHarnessTool,
   type SessionSnapshot,
 } from "restate-pi";
-import {appendHistory, loadHistory} from "./history.js";
 import {log} from "./log.js";
 import {SYSTEM_PROMPT, createModelSetup, type ModelSetup} from "./models.js";
 import {RELEASE_TOOLS} from "./tools.js";
-import {RELEASE_PROMPT, currentTurn, finishDelay, logPiEvent, promptSchema, steerHandler, steerSchema} from "./turn.js";
+import {RELEASE_PROMPT, finishDelay, logPiEvent, promptSchema, steerSchema} from "./turn.js";
 
 type State = {tip: string};
 

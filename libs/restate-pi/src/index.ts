@@ -12,3 +12,13 @@ export {
 } from "./harness.js";
 export {contentText, lastAssistantText} from "./transcript.js";
 export {scriptedModel, type ScriptedModel} from "./faux.js";
+export {appendHistory, currentTurn, loadHistory, steerHandler} from "./session.js";
+export {
+  agentObject,
+  runAgent,
+  type AgentModel,
+  type AgentObjectOptions,
+  type AgentOptions,
+  type AgentRun,
+  type RunAgentOptions,
+} from "./agent.js";

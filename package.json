@@ -11,7 +11,9 @@
   "scripts": {
     "build": "tsc -b",
     "typecheck": "pnpm -r typecheck",
-    "test": "pnpm -r --workspace-concurrency=1 test",
+    "test": "pnpm test:unit && pnpm test:e2e",
+    "test:unit": "pnpm --filter restate-pi test",
+    "test:e2e": "pnpm --filter @restate-pi/e2e test",
     "clean": "rm -rf libs/*/dist examples/*/dist",
     "dev": "pnpm --filter @restate-pi/example-virtual-object dev",
     "start": "pnpm build && pnpm --filter @restate-pi/example-virtual-object start"

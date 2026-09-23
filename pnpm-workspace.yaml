@@ -1,6 +1,7 @@
 packages:
   - libs/*
   - examples/*
+  - e2e
 allowBuilds:
   '@google/genai': false
   cpu-features: false

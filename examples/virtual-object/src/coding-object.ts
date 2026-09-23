@@ -31,11 +31,23 @@ import type {AgentMessage, AgentToolResult} from "@earendil-works/pi-agent-core"
 import {createHash} from "node:crypto";
 import {mkdir} from "node:fs/promises";
 import {join, resolve} from "node:path";
-import {Mailbox, durableModels, fromAgentTool, lastAssistantText, runPi, servePi, serveRequest, type GenTool} from "restate-pi";
-import {appendHistory, loadHistory} from "./history.js";
+import {
+  Mailbox,
+  appendHistory,
+  currentTurn,
+  durableModels,
+  fromAgentTool,
+  lastAssistantText,
+  loadHistory,
+  runPi,
+  servePi,
+  serveRequest,
+  steerHandler,
+  type GenTool,
+} from "restate-pi";
 import {log} from "./log.js";
 import {createModelSetup, type ModelSetup} from "./models.js";
-import {currentTurn, finishDelay, logPiEvent, promptSchema, steerHandler, steerSchema} from "./turn.js";
+import {finishDelay, logPiEvent, promptSchema, steerSchema} from "./turn.js";
 
 /** pi-coding-agent does not export its entry type; take it from the API that consumes it. */
 type FileEntries = NonNullable<Parameters<typeof SessionManager.inMemory>[2]>;

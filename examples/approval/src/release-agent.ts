@@ -1,4 +1,5 @@
 // releaseAgent — a pi agent whose production deploys need a human to sign off.
+// It is an `agentObject` with three extra handlers: pending, approve, reject.
 //
 // The `deploy` tool is a generator. For production it creates an awakeable,
 // records it in object state and waits for `approve` or `reject`, or for the
@@ -12,22 +13,9 @@
 
 import * as restate from "@restatedev/restate-sdk-gen";
 import {TerminalError} from "@restatedev/restate-sdk";
-import {Agent} from "@earendil-works/pi-agent-core";
 import {fauxAssistantMessage, fauxText, fauxToolCall, type Context as AiContext} from "@earendil-works/pi-ai";
 import {Type} from "typebox";
-import {
-  Mailbox,
-  contentText,
-  durableStreamFn,
-  lastAssistantText,
-  runPi,
-  scriptedModel,
-  servePi,
-  serveRequest,
-  textResult,
-  toAgentTool,
-  tool,
-} from "restate-pi";
+import {agentObject, contentText, scriptedModel, textResult, tool} from "restate-pi";
 
 /** How long a production deploy waits for a decision. APPROVAL_TIMEOUT_MS overrides it. */
 const APPROVAL_TIMEOUT_MS = Number(process.env.APPROVAL_TIMEOUT_MS ?? 24 * 60 * 60 * 1000);
@@ -75,30 +63,6 @@ const deploy = tool({
   },
 });
 
-const TOOLS = [deploy];
-
-function* prompt({message}: {message: string}): restate.Operation<string> {
-  const mailbox = new Mailbox();
-  const {models, model} = scriptedModel(releaseScript);
-  const agent = new Agent({
-    initialState: {
-      systemPrompt: "You ship releases: staging first, then production.",
-      model,
-      tools: TOOLS.map((t) => toAgentTool(mailbox, t)),
-    },
-    streamFn: durableStreamFn(mailbox),
-  });
-
-  runPi(mailbox, async () => {
-    await agent.prompt(message);
-    return lastAssistantText(agent.state.messages);
-  });
-  return yield* servePi<string>(mailbox, {
-    serve: (request) => serveRequest(request, {mailbox, models, tools: TOOLS}),
-    log,
-  });
-}
-
 function* pending(): restate.Operation<Pending | null> {
   return yield* restate.sharedState<State>().get("pending");
 }
@@ -112,20 +76,27 @@ function decide(approved: boolean) {
   };
 }
 
-export const releaseAgent = restate.object({
+/** A pi session object (prompt, steer, transcript) plus the approval handlers. */
+export const releaseAgent = agentObject({
   name: "releaseAgent",
   description: "A pi agent that ships a release; production waits, suspended, for a human decision.",
-  handlers: {prompt, pending, approve: decide(true), reject: decide(false)},
-  options: {handlers: {pending: {shared: true}, approve: {shared: true}, reject: {shared: true}}},
+  systemPrompt: "You ship releases: staging first, then production.",
+  model: () => scriptedModel(releaseScript),
+  tools: [deploy],
+  log,
+  handlers: {pending, approve: decide(true), reject: decide(false)},
+  handlerOptions: {pending: {shared: true}, approve: {shared: true}, reject: {shared: true}},
 });
 
 // ---- the scripted model ------------------------------------------------------
 
-/** Staging, then production, then a summary of what the tools reported. */
+/** Staging, then production, then a summary of what the tools reported. Only
+ * the latest request counts: the session keeps earlier releases in its history. */
 function releaseScript(context: AiContext) {
-  const user = contentText(context.messages.find((m) => m.role === "user")?.content);
+  const latest = context.messages.slice(context.messages.findLastIndex((m) => m.role === "user"));
+  const user = contentText(latest[0]?.content);
   const version = /v\d+(\.\d+)*/.exec(user)?.[0] ?? "the new build";
-  const results = context.messages.flatMap((m) => (m.role === "toolResult" ? [contentText(m.content)] : []));
+  const results = latest.flatMap((m) => (m.role === "toolResult" ? [contentText(m.content)] : []));
   if (results.length === 0) {
     return fauxAssistantMessage([fauxText(`Staging first.`), fauxToolCall("deploy", {env: "staging", version})], {stopReason: "toolUse"});
   }
