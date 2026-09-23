@@ -1,0 +1,36 @@
+{
+  "name": "restate-pi",
+  "version": "0.1.0",
+  "description": "Embed pi, the open-source coding agent, in Restate durable execution: a mailbox bridge between pi's async loop and the generator SDK, tools as Restate Operations",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "restate-pi-source": "./src/index.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b && tsc -p test",
+    "test": "tsx --test test/*.test.ts"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-agent-core": "^0.85.1",
+    "@earendil-works/pi-ai": "^0.85.1",
+    "@restatedev/restate-sdk": "^1.17.2",
+    "@restatedev/restate-sdk-gen": "^1.17.2",
+    "typebox": "^1.3.33"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-agent-core": "^0.85.1",
+    "@earendil-works/pi-ai": "^0.85.1",
+    "@restatedev/restate-sdk": "^1.17.2",
+    "@restatedev/restate-sdk-gen": "^1.17.2",
+    "typebox": "^1.3.33"
+  }
+}

@@ -16,3 +16,9 @@ yarn-error.log*
 # Restate
 .restate
 restate-data
+
+# pi coding-agent workspaces
+.pi-workspaces
+
+# macOS
+.DS_Store

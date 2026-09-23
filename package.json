@@ -1,27 +1,24 @@
 {
-  "name": "agents",
-  "version": "0.0.1",
+  "name": "restate-pi-workspace",
+  "version": "0.1.0",
   "private": true,
-  "description": "A durable agent loop in six snippets, on the Restate generator SDK (@restatedev/restate-sdk-gen)",
+  "packageManager": "pnpm@12.4.2",
+  "description": "pi, the open-source coding agent, embedded in Restate: the restate-pi library and a virtual-object example",
   "type": "module",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.19"
   },
   "scripts": {
-    "dev": "tsx watch src/app.ts",
-    "start": "tsx src/app.ts",
-    "typecheck": "tsc --noEmit",
-    "build": "tsc"
-  },
-  "dependencies": {
-    "@restatedev/restate-sdk": "^1.17.1",
-    "@restatedev/restate-sdk-gen": "^1.17.1",
-    "openai": "^7.17.0",
-    "zod": "^4.6.5"
+    "build": "tsc -b",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r --workspace-concurrency=1 test",
+    "clean": "rm -rf libs/*/dist examples/*/dist",
+    "dev": "pnpm --filter @restate-pi/example-virtual-object dev",
+    "start": "pnpm build && pnpm --filter @restate-pi/example-virtual-object start"
   },
   "devDependencies": {
-    "@types/node": "^24",
-    "tsx": "^4",
-    "typescript": "^5"
+    "@types/node": "^24.13.5",
+    "tsx": "^4.23.13",
+    "typescript": "^7.0.2"
   }
 }

@@ -1,16 +1,17 @@
 {
-  "compilerOptions": {
-    "target": "esnext",
-    "lib": ["esnext"],
-    "module": "nodenext",
-    "rootDir": "./src",
-    "outDir": "./dist",
-    "sourceMap": true,
-    "strict": true,
-    "esModuleInterop": true,
-    "forceConsistentCasingInFileNames": true,
-    "skipLibCheck": true,
-    "types": ["node"]
-  },
-  "include": ["src"]
+  "files": [],
+  "references": [
+    {
+      "path": "libs/restate-pi"
+    },
+    {
+      "path": "examples/virtual-object"
+    },
+    {
+      "path": "examples/approval"
+    },
+    {
+      "path": "examples/delegation"
+    }
+  ]
 }

@@ -1,4 +1,9 @@
+packages:
+  - libs/*
+  - examples/*
 allowBuilds:
+  '@google/genai': false
+  cpu-features: false
   esbuild: false
-minimumReleaseAgeExclude:
-  - openai@7.17.0
+  protobufjs: false
+  ssh2: false
