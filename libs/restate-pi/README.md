@@ -14,10 +14,16 @@ The library has two layers. Most code only needs the high-level one:
 
 ## Install
 
+Releases are published on GitHub. Install one straight from its release:
+
 ```bash
-npm install restate-pi @restatedev/restate-sdk @restatedev/restate-sdk-gen \
+npm install https://github.com/igalshilman/restate-pi/releases/download/v0.1.0/restate-pi-0.1.0.tgz \
+  @restatedev/restate-sdk @restatedev/restate-sdk-gen \
   @earendil-works/pi-agent-core @earendil-works/pi-ai typebox
 ```
+
+The same URL works with `pnpm add` and `yarn add`. The package is still named
+`restate-pi`, so imports are `from "restate-pi"`.
 
 Everything except `restate-pi` is a peer dependency, so your app controls those
 versions. restate-pi needs Node.js 22.19 or newer.

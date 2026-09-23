@@ -67,10 +67,11 @@ scripted model.
 
 ## What the code looks like
 
-The library is on npm:
+The library is published as a [GitHub release](https://github.com/igalshilman/restate-pi/releases). Install it with its peer dependencies:
 
 ```bash
-npm install restate-pi @restatedev/restate-sdk @restatedev/restate-sdk-gen \
+npm install https://github.com/igalshilman/restate-pi/releases/download/v0.1.0/restate-pi-0.1.0.tgz \
+  @restatedev/restate-sdk @restatedev/restate-sdk-gen \
   @earendil-works/pi-agent-core @earendil-works/pi-ai typebox
 ```
 
