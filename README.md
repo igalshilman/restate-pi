@@ -109,9 +109,9 @@ export const deploy = tool({
 ```
 
 One tool definition works with pi's classic `Agent`, its durable `AgentHarness`, and
-the coding agent. Underneath `agentObject` and `runAgent` sit the building blocks
-described next: a mailbox, the `servePi` loop and the adapters. They stay available for
-hosting other pi layers. The [library README](libs/restate-pi) lists the full API.
+the coding agent. Underneath `agentObject` and `runAgent` sit the building blocks: a mailbox, the
+`servePi` loop and the adapters. [How it works](#how-it-works) explains them and shows the
+same handler written by hand. The [library README](libs/restate-pi) lists the full API.
 
 ## How it works
 
@@ -139,6 +139,116 @@ streamFn / tool.execute ──post──▶    run(() => mailbox.next())    jour
   happens.
 - **Steering.** A steering note is delivered only while pi is waiting on a request.
   That fixes the note's place in the transcript, so a replay puts it in the same spot.
+
+### Written by hand
+
+This is roughly what `runAgent` does for you: a `prompt` handler built directly from
+the building blocks. You build pi's `Agent` yourself and give it a model function and
+tools that post to a mailbox. You start pi's work as plain async code, then let
+`servePi` serve its requests until pi reports that it is done:
+
+```ts
+import * as restate from "@restatedev/restate-sdk-gen";
+import {Agent} from "@earendil-works/pi-agent-core";
+import {Mailbox, durableStreamFn, lastAssistantText, runPi, servePi, serveRequest, toAgentTool} from "restate-pi";
+
+function* prompt({message}: {message: string}): restate.Operation<string> {
+  const mailbox = new Mailbox();
+
+  // pi's side. A normal pi Agent, except its model calls and tool calls post to the mailbox.
+  const agent = new Agent({
+    initialState: {
+      systemPrompt: "You ship releases.",
+      model,
+      tools: TOOLS.map((t) => toAgentTool(mailbox, t)),
+    },
+    streamFn: durableStreamFn(mailbox),
+  });
+
+  // Start pi's turn as plain async code. Its result is what servePi returns.
+  runPi(mailbox, async () => {
+    await agent.prompt(message);
+    return lastAssistantText(agent.state.messages);
+  });
+
+  // Restate's side. Serve each request as a journaled step until pi is done.
+  return yield* servePi<string>(mailbox, {
+    serve: (request) => serveRequest(request, {mailbox, models, tools: TOOLS}),
+    onSteer: (note) => agent.steer({role: "user", content: note, timestamp: Date.now()}),
+  });
+}
+```
+
+`serve` decides how each request is handled. `serveRequest` is the default: the model
+call runs in one journaled step, the tool runs its generator, and a harness wait
+becomes a Restate timer. Replace it to route model calls somewhere else, or to wrap
+every tool call in your own step. Unlike `runAgent`, this version starts from an empty
+conversation, and a steer that arrives after pi finished is dropped. Pass `onLateSteer`
+to start a follow-up turn for it instead.
+
+The same pieces host pi's other layers. For fuller examples, see
+[`harness-object.ts`](examples/virtual-object/src/harness-object.ts), which drives pi's
+`AgentHarness` with `driveToSettlement`, and
+[`coding-object.ts`](examples/virtual-object/src/coding-object.ts), which runs the
+coding agent with pi's own tools wrapped by `fromAgentTool`.
+
+## Determinism
+
+Restate recovers a handler by replaying it: the handler runs again from the top, and
+every step already in the journal returns its recorded result instead of running.
+restate-pi does not journal pi itself. On replay, pi's loop really runs again, and only
+what pi asks for is served from the journal. So a replay works only if pi, given the
+same answers, asks for the same things in the same order.
+
+**What is journaled.** Each request pi makes, recorded as a small descriptor: a model
+call, or a tool call with its name and call id. Also each answer: the settled model
+message and the tool's result. Steering notes and the "pi has gone quiet" markers are
+journaled too, as is the value pi returns at the end of a turn. State written from that
+value therefore matches the first execution.
+
+**What is not.** pi's internal state: message timestamps, event order, ids it makes up
+for itself. Those can differ on replay, and that is fine because nothing that is
+journaled depends on them. Tool call ids come from the model's reply, which is
+journaled, so they come back the same.
+
+**How divergence is caught.** When pi re-issues request *n* on replay, the mailbox
+compares it with the descriptor in the journal: the same kind, the same tool and call
+id, the same model mode. If they differ, the invocation fails with
+`pi replay divergence at request n: the journal has …, pi asked for …`. It does not
+carry on with answers that belong to another request.
+
+**What restate-pi does to keep pi deterministic:**
+- **Answers arrive in journal order.** Each one is delivered while the handler
+  advances, in the order recorded in the journal.
+- **Steering notes land at a fixed point.** A note reaches pi only while pi is waiting
+  on a request, so a replay puts it at the same spot in the transcript.
+- **Turns run one at a time** (`runPi`). A replay can reach the end of a turn in the
+  journal before pi's re-run of that turn has actually finished. A follow-up turn waits
+  for pi, not for the journal.
+- **Going quiet is journaled, not re-timed.** Deciding that pi has gone quiet uses a
+  short timer, but only on the first execution. Replay reads the decision from the
+  journal.
+- **The harness's operation ids** come from `restate.rand()`, so they match on replay.
+
+**What your code must do:**
+- **Keep effects inside tools.** Anything pi learns from the outside world has to
+  arrive as a model reply or a tool result. A pi hook that reads the clock, a file or
+  an API to decide what to ask next makes pi's requests differ on replay. Put that work
+  in a tool.
+- **Keep side effects inside `restate.run` in tool bodies.** Outside it, use
+  `restate.date()` and `restate.rand()` instead of `Date.now()` and `Math.random()`.
+  Anything that decides which steps a tool takes must come from the journal.
+- **Use a model provider that any process can poll for deferred responses.** A real
+  provider's deferred handle points to its own servers, so that works. `scriptedModel`
+  carries the reply inside the handle. pi-ai's own fake provider keeps deferred replies
+  in memory, which a replay in another process cannot poll.
+
+**Testing it.** The e2e tests run every example twice, once on a server that
+suspends at every await and replays the whole journal to continue. Two bugs found that
+way are fixed in the library. One was a follow-up turn starting inside a turn pi was
+still re-running. The other was deferred replies that only existed in one process's
+memory. Run your own services the same way with
+`RestateTestEnvironment.start({services, alwaysReplay: true})`.
 
 ## Examples
 
